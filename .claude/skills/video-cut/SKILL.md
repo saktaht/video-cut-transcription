@@ -70,13 +70,18 @@ description: Detect silent gaps across one or more videos in input/ with ffmpeg 
    - カット件数
    - 次の選択肢（DaVinciへ持っていく／パラメータを変えて再生成／文字起こしCSVを生成する）を提示する
 
-6. **（任意）文字起こしCSVを生成する**
+6. **（任意）文字起こしCSV / 字幕SRTを生成する**
    - 初回のみ依存パッケージを入れる: `pip3 install faster-whisper`
    ```bash
    python3 .claude/skills/video-cut/scripts/transcribe_to_csv.py output/draft.mp4
    ```
    - `output/draft.csv` に `start_sec,end_sec,text` の列で、秒数とその区間の発話テキストを対応させて出力する（既定はフレーズ単位、`--granularity word` で単語単位）。
    - 字幕の下書きや、カット見直しのための文字起こし参照に使う。モデルは既定 `small`。精度を上げたい場合は `--model medium` や `large-v3` を指定（その分実行時間は伸びる）。
+   - DaVinci Resolveに字幕として読み込みたい場合は `--format srt`（CSVも欲しければ `--format both`）を付けると `output/draft.srt` が生成される。Resolveでは「File > Import > Subtitle」、または生成された`.srt`をタイムラインに直接ドラッグ＆ドロップすると字幕トラックとして読み込める。
+   - 字幕は基本的にフレーズ単位（既定の`--granularity segment`）で生成するのが読みやすい。`--granularity word`はSRTだと表示が短すぎて読みにくくなるため、字幕用途では避ける。
+   ```bash
+   python3 .claude/skills/video-cut/scripts/transcribe_to_csv.py output/draft.mp4 --format srt
+   ```
 
 ## 失敗時の確認項目
 - `ffmpeg`/`ffprobe` が `PATH` にあるか（`which ffmpeg ffprobe`）

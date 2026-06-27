@@ -62,7 +62,8 @@ description: Detect silent gaps across one or more videos in input/ with ffmpeg 
      --output output/draft.mp4
    ```
    - 入力ファイルは `cuts.json` の `sources` から読むので、このコマンドに `--input` は不要。
-   - フレーム精度のカットのため再エンコード（libx264 + aac）する。実行ごとに `output/draft.mp4` は上書きされる（これは意図した動作）。
+   - フレーム精度のカットのため再エンコード（+ aac）する。実行ごとに `output/draft.mp4` は上書きされる（これは意図した動作）。
+   - エンコーダーは既定 `--encoder auto`：NVIDIA GPU（NVENC, h264_nvenc）が使えればGPUで高速に、無ければCPU（libx264）で再エンコードする。GPUエンコードが失敗した場合はautoモードなら自動でCPUにフォールバックする。明示的に固定したい場合は `--encoder nvenc` / `--encoder cpu` を指定。
    - 完了したらファイルサイズと長さをユーザーに報告する（`ffprobe -show_entries format=duration output/draft.mp4` 等）。
 
 5. **完了報告**

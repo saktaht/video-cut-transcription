@@ -12,8 +12,56 @@
 
 import argparse
 import csv
+import os
 import sys
 from pathlib import Path
+
+if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
+
+def _make_cuda_libs_discoverable():
+    """ctranslate2's GPU backend needs cuBLAS/cuDNN (and their own runtime deps,
+    e.g. nvJitLink) at runtime. Rather than requiring a system-wide CUDA Toolkit
+    install, pick up the DLLs/SOs bundled in whichever `nvidia-*-cu12` pip
+    packages are installed (cublas, cudnn, nvjitlink, ...). No-op if none are."""
+    try:
+        import nvidia
+    except ImportError:
+        return
+    lib_dirs = [
+        Path(pkg_dir) / subdir
+        for ns_dir in nvidia.__path__
+        for pkg_dir in Path(ns_dir).iterdir()
+        for subdir in ("bin", "lib")
+    ]
+    lib_dirs = [d for d in lib_dirs if d.is_dir()]
+    if sys.platform == "win32":
+        for d in lib_dirs:
+            os.add_dll_directory(str(d))
+        # ctranslate2's C++ delay-loading of cuBLAS/cuDNN goes through plain
+        # LoadLibrary calls, which only consult PATH, not add_dll_directory()
+        # (that mechanism is only honored by Python's own import/ctypes loads).
+        os.environ["PATH"] = os.pathsep.join([str(d) for d in lib_dirs] + [os.environ.get("PATH", "")])
+    else:
+        os.environ["LD_LIBRARY_PATH"] = os.pathsep.join(
+            [str(d) for d in lib_dirs] + [os.environ.get("LD_LIBRARY_PATH", "")]
+        )
+
+
+_make_cuda_libs_discoverable()
+
+
+def detect_device() -> str:
+    """Use the GPU when ctranslate2 can see one, otherwise fall back to CPU."""
+    try:
+        import ctranslate2
+        if ctranslate2.get_cuda_device_count() > 0:
+            return "cuda"
+    except Exception:
+        pass
+    return "cpu"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -41,8 +89,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="segment: フレーズ単位で秒数と対応（既定） / word: 単語単位でより細かく秒数と対応",
     )
     parser.add_argument(
-        "--device", default="cpu", choices=["cpu", "cuda"],
-        help="推論デバイス（既定: cpu）",
+        "--device", default="auto", choices=["auto", "cpu", "cuda"],
+        help="推論デバイス（既定: auto。GPUが使えれば自動でcuda、無ければcpu）",
     )
     return parser
 
@@ -105,8 +153,9 @@ def main():
 
     base_output = args.output or args.video
 
-    print(f"文字起こし中... ({args.video} / model={args.model} / granularity={args.granularity})")
-    rows, info = transcribe(args.video, args.model, args.language, args.device, args.granularity)
+    device = detect_device() if args.device == "auto" else args.device
+    print(f"文字起こし中... ({args.video} / model={args.model} / granularity={args.granularity} / device={device})")
+    rows, info = transcribe(args.video, args.model, args.language, device, args.granularity)
     print(f"検出言語: {info.language} (確度 {info.language_probability:.2f})")
 
     if args.format in ("csv", "both"):

@@ -12,6 +12,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 SILENCE_START_RE = re.compile(r"silence_start:\s*(-?[\d.]+)")
 SILENCE_END_RE = re.compile(r"silence_end:\s*(-?[\d.]+)")
 
@@ -35,7 +39,7 @@ def get_duration(input_path: Path) -> float:
             "-of", "default=noprint_wrappers=1:nokey=1",
             str(input_path),
         ],
-        capture_output=True, text=True, check=True,
+        capture_output=True, text=True, encoding="utf-8", errors="replace", check=True,
     )
     return float(result.stdout.strip())
 
@@ -48,7 +52,7 @@ def detect_raw_silence(input_path: Path, silence_db: float, min_silence_duration
             "-af", f"silencedetect=noise={silence_db}dB:d={min_silence_duration}",
             "-f", "null", "-",
         ],
-        capture_output=True, text=True,
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
     )
     log = proc.stderr
 
@@ -171,7 +175,7 @@ def main():
         },
     }
 
-    output_json.write_text(json.dumps(result, indent=2, ensure_ascii=False))
+    output_json.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
 
     print(f"Wrote {output_json} — {len(sources)} source file(s), combined output ~"
           f"{result['summary']['estimated_output_seconds']}s (from {round(total_duration, 3)}s total). Join order:")

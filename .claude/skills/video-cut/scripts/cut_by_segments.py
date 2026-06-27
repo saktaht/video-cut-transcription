@@ -11,7 +11,12 @@ import argparse
 import json
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
+
+if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 
 def validate_and_sort_segments(keep_segments, duration=None, label=""):
@@ -29,6 +34,27 @@ def validate_and_sort_segments(keep_segments, duration=None, label=""):
         if cur["start"] < prev["end"] - 0.01:
             raise ValueError(f"{label}: overlapping segments, fix before rendering: {prev} and {cur}")
     return ordered
+
+
+def nvenc_available() -> bool:
+    """True if this ffmpeg build can drive an NVIDIA GPU encoder (h264_nvenc)."""
+    try:
+        result = subprocess.run(
+            ["ffmpeg", "-hide_banner", "-encoders"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+        )
+        return "h264_nvenc" in result.stdout
+    except FileNotFoundError:
+        return False
+
+
+def video_codec_args(use_nvenc: bool, crf: int, preset: str):
+    if use_nvenc:
+        # -cq uses the same 0-51 "lower is better" scale as x264's -crf, so the
+        # --crf value doubles as the GPU quality target. p5 trades some speed
+        # (still far faster than CPU) for quality closer to x264's defaults.
+        return ["-c:v", "h264_nvenc", "-preset", "p5", "-rc", "vbr", "-cq", str(crf)]
+    return ["-c:v", "libx264", "-preset", preset, "-crf", str(crf)]
 
 
 def build_filter_complex(sources):
@@ -51,9 +77,13 @@ def main():
     parser = argparse.ArgumentParser(description="Render output/draft.mp4 by joining every source's keep_segments, in cuts.json order.")
     parser.add_argument("--cuts-json", default="output/cuts.json", help="Edit list produced by detect_silence.py.")
     parser.add_argument("--output", default="output/draft.mp4", help="Draft file to write. Overwritten each run.")
-    parser.add_argument("--crf", type=int, default=18, help="x264 quality (lower = better/larger).")
-    parser.add_argument("--preset", default="veryfast", help="x264 preset.")
+    parser.add_argument("--crf", type=int, default=18, help="Quality (lower = better/larger); used as -crf on CPU or -cq on GPU.")
+    parser.add_argument("--preset", default="veryfast", help="x264 preset (CPU encoding only).")
     parser.add_argument("--audio-bitrate", default="192k")
+    parser.add_argument(
+        "--encoder", default="auto", choices=["auto", "nvenc", "cpu"],
+        help="auto: GPU(NVENC)が使えれば自動使用、無ければCPU(libx264) / nvenc: 強制的にGPU / cpu: 強制的にCPU",
+    )
     args = parser.parse_args()
 
     cuts_json_path = Path(args.cuts_json)
@@ -63,7 +93,7 @@ def main():
         print(f"Edit list not found: {cuts_json_path}. Run detect_silence.py first.", file=sys.stderr)
         sys.exit(1)
 
-    data = json.loads(cuts_json_path.read_text())
+    data = json.loads(cuts_json_path.read_text(encoding="utf-8"))
     sources = data.get("sources", [])
     if not sources:
         print("No sources in cuts.json — nothing to render.", file=sys.stderr)
@@ -102,23 +132,46 @@ def main():
 
     filter_complex = build_filter_complex(sources)
 
-    cmd = ["ffmpeg", "-y"]
-    for source in sources:
-        cmd += ["-i", source["input"]]
-    cmd += [
-        "-filter_complex", filter_complex,
-        "-map", "[outv]", "-map", "[outa]",
-        "-c:v", "libx264", "-preset", args.preset, "-crf", str(args.crf),
-        "-c:a", "aac", "-b:a", args.audio_bitrate,
-        str(output_path),
-    ]
-
     total_segments = sum(len(s["keep_segments"]) for s in sources)
     print(f"Rendering {len(sources)} source file(s), {total_segments} segment(s) total -> {output_path}")
     for s in sources:
         print(f"  - {s['input']}: {len(s['keep_segments'])} segment(s)")
 
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    use_nvenc = args.encoder == "nvenc" or (args.encoder == "auto" and nvenc_available())
+    print(f"Encoder: {'h264_nvenc (GPU)' if use_nvenc else 'libx264 (CPU)'}")
+
+    # Pass the filter graph via a script file rather than inline on the command
+    # line: with hundreds of segments this string can exceed the OS command-line
+    # length limit (hit on Windows around ~300 segments).
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".filter", delete=False, encoding="utf-8"
+    ) as f:
+        f.write(filter_complex)
+        filter_script_path = f.name
+
+    try:
+        def render(nvenc: bool):
+            cmd = ["ffmpeg", "-y"]
+            for source in sources:
+                cmd += ["-i", source["input"]]
+            cmd += [
+                "-filter_complex_script", filter_script_path,
+                "-map", "[outv]", "-map", "[outa]",
+                *video_codec_args(nvenc, args.crf, args.preset),
+                "-c:a", "aac", "-b:a", args.audio_bitrate,
+                str(output_path),
+            ]
+            return subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+
+        result = render(use_nvenc)
+        if use_nvenc and result.returncode != 0 and args.encoder == "auto":
+            print("GPU encode failed, falling back to CPU (libx264):", file=sys.stderr)
+            print(result.stderr[-2000:], file=sys.stderr)
+            use_nvenc = False
+            result = render(False)
+    finally:
+        Path(filter_script_path).unlink(missing_ok=True)
+
     if result.returncode != 0:
         print("ffmpeg failed:", file=sys.stderr)
         print(result.stderr[-4000:], file=sys.stderr)

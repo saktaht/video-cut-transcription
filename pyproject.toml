@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "video-auto-cut"
+version = "0.1.0"
+description = "Silence-based video cutting with editable JSON and optional CSV/SRT transcription"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+transcribe = ["faster-whisper>=1,<2"]
+
+[project.scripts]
+video-auto-cut-detect = "video_auto_cut.detect_silence:main"
+video-auto-cut-render = "video_auto_cut.render_video:main"
+video-auto-cut-transcribe = "video_auto_cut.transcribe:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

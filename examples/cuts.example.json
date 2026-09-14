@@ -1,0 +1,43 @@
+{
+  "params": {
+    "silence_db": -30,
+    "min_silence_duration": 0.45,
+    "padding": 0.15
+  },
+  "sources": [
+    {
+      "input": "input/01_intro.mp4",
+      "duration": 10.0,
+      "silence_segments_raw": [{"start": 2.0, "end": 4.0}],
+      "cut_segments": [{"start": 2.15, "end": 3.85}],
+      "keep_segments": [{"start": 0.0, "end": 2.15}, {"start": 3.85, "end": 10.0}],
+      "summary": {
+        "silence_candidates": 1,
+        "actual_cuts": 1,
+        "keep_segments": 2,
+        "estimated_cut_seconds": 1.7,
+        "estimated_output_seconds": 8.3
+      }
+    },
+    {
+      "input": "input/02_main.mp4",
+      "duration": 5.0,
+      "silence_segments_raw": [],
+      "cut_segments": [],
+      "keep_segments": [{"start": 0.0, "end": 5.0}],
+      "summary": {
+        "silence_candidates": 0,
+        "actual_cuts": 0,
+        "keep_segments": 1,
+        "estimated_cut_seconds": 0.0,
+        "estimated_output_seconds": 5.0
+      }
+    }
+  ],
+  "summary": {
+    "source_count": 2,
+    "total_duration": 15.0,
+    "estimated_cut_seconds": 1.7,
+    "estimated_output_seconds": 13.3
+  }
+}

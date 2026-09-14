@@ -2,12 +2,12 @@
 """動画/音声ファイルを文字起こしし、開始秒・終了秒・テキストを対応させたCSV/SRTを出力する。
 
 事前準備:
-    pip3 install faster-whisper
+    python -m pip install -e '.[transcribe]'
 
 使い方:
-    python3 .claude/skills/video-cut/scripts/transcribe_to_csv.py output/draft.mp4
-    python3 .claude/skills/video-cut/scripts/transcribe_to_csv.py output/draft.mp4 --granularity word --model medium
-    python3 .claude/skills/video-cut/scripts/transcribe_to_csv.py output/draft.mp4 --format srt
+    video-auto-cut-transcribe output/draft.mp4
+    video-auto-cut-transcribe output/draft.mp4 --granularity word --model medium
+    video-auto-cut-transcribe output/draft.mp4 --format srt
 """
 
 import argparse

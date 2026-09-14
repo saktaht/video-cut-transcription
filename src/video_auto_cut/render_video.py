@@ -15,7 +15,7 @@ from pathlib import Path
 
 
 def validate_and_sort_segments(keep_segments, duration=None, label=""):
-    """cuts.json may be hand-edited (SKILL.md tells users they can adjust it),
+    """cuts.json may be hand-edited,
     so don't trust list order or non-overlap — sort by start time and reject
     anything that would play back out of order or double-render a region."""
     for seg in keep_segments:

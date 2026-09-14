@@ -12,7 +12,7 @@ description: Detect silent gaps across one or more videos in input/ with ffmpeg 
 
 ## 絶対に守ること
 - 元動画（`input/` 以下のすべてのファイル）は**絶対に上書き・変更しない**。書き込み先は常に `output/` 以下。
-- `cut_by_segments.py` は `cuts.json` 内のどの元動画パスも出力パスと一致しないかを起動時にチェックして、一致したらエラーで停止する。
+- `render_video.py` は `cuts.json` 内のどの元動画パスも出力パスと一致しないかを起動時にチェックして、一致したらエラーで停止する。
 - 切りすぎ・やりすぎない。デフォルトは安全寄り（無音0.45秒以上のみカット、前後0.15秒は残す）。迷ったらカット量を減らす方向に倒す。
 
 ## 結合順について
@@ -23,6 +23,7 @@ description: Detect silent gaps across one or more videos in input/ with ffmpeg 
 ## 手順
 
 1. **環境確認**
+   プロジェクトルートで仮想環境を有効にし、`python -m pip install -e .` でパッケージをインストールしておく。
    ```bash
    which ffmpeg ffprobe
    ```
@@ -32,7 +33,7 @@ description: Detect silent gaps across one or more videos in input/ with ffmpeg 
 
    `input/` 内の動画をファイル名順で自動結合する場合:
    ```bash
-   python3 .claude/skills/video-cut/scripts/detect_silence.py \
+   video-auto-cut-detect \
      --output-json output/cuts.json \
      --silence-db -30 \
      --min-silence-duration 0.45 \
@@ -41,7 +42,7 @@ description: Detect silent gaps across one or more videos in input/ with ffmpeg 
 
    結合順を明示したい場合（このファイル列挙順がそのまま最終動画の順番になる）:
    ```bash
-   python3 .claude/skills/video-cut/scripts/detect_silence.py \
+   video-auto-cut-detect \
      --input input/match1.mp4 input/match2.mp4 input/match3.mp4 \
      --output-json output/cuts.json \
      --silence-db -30 \
@@ -57,7 +58,7 @@ description: Detect silent gaps across one or more videos in input/ with ffmpeg 
 
 4. **ドラフト動画を書き出す**
    ```bash
-   python3 .claude/skills/video-cut/scripts/cut_by_segments.py \
+   video-auto-cut-render \
      --cuts-json output/cuts.json \
      --output output/draft.mp4
    ```
@@ -71,16 +72,16 @@ description: Detect silent gaps across one or more videos in input/ with ffmpeg 
    - 次の選択肢（DaVinciへ持っていく／パラメータを変えて再生成／文字起こしCSVを生成する）を提示する
 
 6. **（任意）文字起こしCSV / 字幕SRTを生成する**
-   - 初回のみ依存パッケージを入れる: `pip3 install faster-whisper`
+   - 初回のみ依存パッケージを入れる: `python -m pip install -e '.[transcribe]'`
    ```bash
-   python3 .claude/skills/video-cut/scripts/transcribe_to_csv.py output/draft.mp4
+   video-auto-cut-transcribe output/draft.mp4
    ```
    - `output/draft.csv` に `start_sec,end_sec,text` の列で、秒数とその区間の発話テキストを対応させて出力する（既定はフレーズ単位、`--granularity word` で単語単位）。
    - 字幕の下書きや、カット見直しのための文字起こし参照に使う。モデルは既定 `small`。精度を上げたい場合は `--model medium` や `large-v3` を指定（その分実行時間は伸びる）。
    - DaVinci Resolveに字幕として読み込みたい場合は `--format srt`（CSVも欲しければ `--format both`）を付けると `output/draft.srt` が生成される。Resolveでは「File > Import > Subtitle」、または生成された`.srt`をタイムラインに直接ドラッグ＆ドロップすると字幕トラックとして読み込める。
    - 字幕は基本的にフレーズ単位（既定の`--granularity segment`）で生成するのが読みやすい。`--granularity word`はSRTだと表示が短すぎて読みにくくなるため、字幕用途では避ける。
    ```bash
-   python3 .claude/skills/video-cut/scripts/transcribe_to_csv.py output/draft.mp4 --format srt
+   video-auto-cut-transcribe output/draft.mp4 --format srt
    ```
 
 ## 失敗時の確認項目
@@ -88,17 +89,18 @@ description: Detect silent gaps across one or more videos in input/ with ffmpeg 
 - 入力動画が実際に存在するか、パスが正しいか
 - 自動検出（`--input` 省略時）で意図しないファイルや順番になっていないか → `output/cuts.json` の `sources` の並びを確認し、必要なら `--input` で明示的に再指定する
 - `detect_silence.py` が `silence_segments_raw: []` を返した場合 → `--silence-db` が低すぎる（厳しすぎる）か、動画が常に無音閾値以上の音量で鳴っている可能性。`-30dB` を `-25dB` 寄りに緩めて再試行する
-- カットが多すぎ/少なすぎる場合 → `--min-silence-duration` と `--padding` を調整して `detect_silence.py` だけ再実行（`cut_by_segments.py` は再実行しなくてよい）
-- `cut_by_segments.py` が ffmpeg エラーで落ちる場合 → 元動画の音声トラックが存在するか確認（無音動画や音声トラックなしのファイルだと `atrim`/`concat` が失敗する）
-- `cut_by_segments.py` が `cuts.json is invalid: ...` で落ちる場合 → どの `source` のどの区間が原因か、エラーメッセージに出ている内容を修正する（重なり・`end <= start` など。並び順自体は自動でソートされるので心配しなくてよい）
-- `cut_by_segments.py` が `no keep_segments are skipped entirely` と警告する場合 → その動画全体が無音判定されている。`--silence-db` か `--min-silence-duration` を見直す
+- カットが多すぎ/少なすぎる場合 → `--min-silence-duration` と `--padding` を調整して `detect_silence.py` だけ再実行（JSON確認後、動画へ反映するには `video-auto-cut-render` も再実行する）
+- `render_video.py` が ffmpeg エラーで落ちる場合 → 元動画の音声トラックが存在するか確認（無音動画や音声トラックなしのファイルだと `atrim`/`concat` が失敗する）
+- `render_video.py` が `cuts.json is invalid: ...` で落ちる場合 → どの `source` のどの区間が原因か、エラーメッセージに出ている内容を修正する（重なり・`end <= start` など。並び順自体は自動でソートされるので心配しなくてよい）
+- `render_video.py` が `no keep_segments are skipped entirely` と警告する場合 → その動画全体が無音判定されている。`--silence-db` か `--min-silence-duration` を見直す
 
 ## ファイル構成
-```
+
+```text
+src/video_auto_cut/
+  detect_silence.py   # 無音検出 → output/cuts.json
+  render_video.py    # cuts.jsonのkeep_segmentsを結合 → output/draft.mp4
+  transcribe.py      # 文字起こし → CSV/SRT（任意）
 .claude/skills/video-cut/
-  SKILL.md
-  scripts/
-    detect_silence.py     # 1本以上の動画の無音検出 → output/cuts.json を生成
-    cut_by_segments.py    # output/cuts.json の sources を結合順に並べ、output/draft.mp4 を生成
-    transcribe_to_csv.py  # 動画/音声を文字起こしし、秒数とテキストを対応させたCSVを生成（任意・faster-whisper要）
+  SKILL.md           # この補助手順。実装はsrc/で管理する
 ```

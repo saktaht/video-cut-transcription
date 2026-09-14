@@ -3,7 +3,7 @@
 
 Supports multiple --input files (or auto-discovers everything under --input-dir) so
 several separately recorded clips can each be silence-cut and then joined into one
-final video by cut_by_segments.py, in the given order. Never touches any input file.
+final video by render_video.py, in the given order. Never touches any input file.
 """
 import argparse
 import json

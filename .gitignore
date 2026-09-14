@@ -1,2 +1,13 @@
-input
-output
+input/*
+!input/.gitignore
+output/*
+!output/.gitignore
+__pycache__
+.env
+*.py[cod]
+.DS_Store
+.venv/
+*.egg-info/
+build/
+dist/
+.pytest_cache/
